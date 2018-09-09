@@ -178,6 +178,7 @@ class CollectionHandlerTest(CollectionTestBase):
             'Basic',
             'Basic (and reversed card)',
             'Basic (optional reversed card)',
+            'Basic (type in the answer)',
             'Cloze'
         ]
 
