@@ -1,0 +1,10 @@
+
+You don't need to create a collection, models or deck if you just want to use one of the standard models and the Default deck - the collection will get created automatically on any call that requires one on the main CollectionHandler, the other Handlers require Ids for db entries, so you must have already created a collection and the relevant entries
+
+Here is an example to create a note using the "Basic" model in the collection "anton" with "Front" equal to "hiness" and "Back" equal to "thereness"
+
+$ curl -s -XPOST -d '{"model": "Basic", "fields": {"Front":"hiness","Back":"thereness"}}' 'http://127.0.0.1:27701/collection/anton/add_note'
+
+Notes:
+- If the collection doesn't exist it will be created automatically and populated with Anki's default deck "Default" and the default models (see Anki docs for what is created)
+- The call will fail silently on many errors - the fact that an error has occurred and the note not created does NOT mean you should expect a 500. This will get fixed at some stage
