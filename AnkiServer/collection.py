@@ -1,17 +1,17 @@
 
 # AnkiServer - A personal Anki sync server
 # Copyright (C) 2013 David Snopek
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -28,7 +28,7 @@ class CollectionWrapper:
     This allows us to manage and refer to the collection, whether it's open or not. It
     also provides a special "continuation passing" interface for executing functions
     on the collection, which makes it easy to switch to a threading mode.
-    
+
     See ThreadingCollectionWrapper for a version that maintains a seperate thread for
     interacting with the collection.
     """
@@ -37,6 +37,9 @@ class CollectionWrapper:
         self.path = os.path.realpath(path)
         self.setup_new_collection = setup_new_collection
         self.__col = None
+
+    def ret_col(self):
+        return self.__col
 
     def __del__(self):
         """Close the collection if the user forgot to do so."""
