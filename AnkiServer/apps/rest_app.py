@@ -1,17 +1,17 @@
 
 # AnkiServer - A personal Anki sync server
 # Copyright (C) 2013 David Snopek
-# 
+#
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU Affero General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
@@ -26,6 +26,8 @@ import anki.consts
 import anki.lang
 from anki.lang import _ as t
 from anki.utils import intTime
+from anki.utils import splitFields
+import re
 
 import AnkiServer
 
@@ -97,10 +99,11 @@ class RestApp:
 
         # hold per collection session data
         self.sessions = {}
+        self.known_words = None
 
     def add_handler(self, type, name, handler):
         """Adds a callback handler for a type (collection, deck, card) with a unique name.
-        
+
          - 'type' is the item that will be worked on, for example: collection, deck, and card.
 
          - 'name' is a unique name for the handler that gets used in the URL.
@@ -114,7 +117,7 @@ class RestApp:
 
     def add_handler_group(self, type, group):
         """Adds several handlers for every public method on an object descended from RestHandlerBase.
-        
+
         This allows you to create a single class with several methods, so that you can quickly
         create a group of related handlers."""
 
@@ -146,10 +149,13 @@ class RestApp:
                 remote_addr = req.remote_addr
             if remote_addr != self.allowed_hosts:
                 raise HTTPForbidden()
-        
+
         if req.path == '/':
             if req.method != 'GET':
                 raise HTTPMethodNotAllowed(allow=['GET'])
+        # elif '/list_' in req.path:
+        #     if req.method != 'GET':
+        #         raise HTTPMethodNotAllowed(allow=['GET'])
         elif req.method != 'POST':
             raise HTTPMethodNotAllowed(allow=['POST'])
 
@@ -204,7 +210,7 @@ class RestApp:
 
     def _getCollectionPath(self, collection_id):
         """Returns the path to the collection based on the collection_id from the request.
-        
+
         Raises HTTPBadRequest if the collection_id is invalid."""
 
         path = os.path.normpath(os.path.join(self.data_root, collection_id, 'collection.anki2'))
@@ -225,7 +231,7 @@ class RestApp:
             handler = self.handlers[type][name]
         except KeyError:
             raise HTTPNotFound()
-         
+
         # get if we have a return value
         hasReturnValue = True
         if hasattr(handler, 'hasReturnValue'):
@@ -237,7 +243,7 @@ class RestApp:
         """Parses the request body (JSON) into a Python dict and returns it.
 
         Raises an HTTPBadRequest exception if the request isn't valid JSON."""
-        
+
         try:
             data = json.loads(req.body)
         except ValueError as e:
@@ -261,6 +267,22 @@ class RestApp:
             self.hook_post_execute(col, req, result)
         return result
 
+    def _load_known_words(self, col, deck_name):
+        TAG_RE = re.compile(r'<[^>]+>')
+        deck = DeckHandler._get_deck(col, deck_name)
+        col.decks.select(deck['id'])
+        did = deck['id']
+        logging.info("loading known_words for deck: {}, with deck_id: {}".format(deck_name, did))
+        sqlc = "SELECT distinct n.id, n.flds, n.tags FROM cards c, notes n WHERE c.nid = n.id AND c.did = ? AND c.type > 0"
+        myknown_words = {}
+        for r in col.db.all(sqlc, did):
+            word = TAG_RE.sub('', splitFields(r[1])[0])  # split on Anki's field sep and remove any html
+            # logging.info("Found: {} for deck: {}, with deck_id: {}".format(word, deck_name, did))
+            myknown_words[word] = {'id': r[0], 'word': word, 'tags': r[2]}
+
+        return myknown_words
+
+
     @wsgify
     def __call__(self, req):
         # make sure the request is valid
@@ -268,7 +290,7 @@ class RestApp:
 
         # special non-collection paths
         if req.path == '/':
-            return Response('AnkiServer ' + str(AnkiServer.__version__), content_type='text/plain')
+            return Response('AnkiServer fdw ' + str(AnkiServer.__version__), content_type='text/plain')
         if req.path == '/list_collections':
             return Response(json.dumps(self.list_collections()), charset='utf-8', content_type='application/json')
 
@@ -298,13 +320,22 @@ class RestApp:
         # run it!
         try:
             col = self.collection_manager.get_collection(collection_path, self.setup_new_collection)
+            # Preload known words from db
+            if not self.known_words:
+                mywrapper = col.wrapper
+                mywrapper.open()
+                logging.info("Loading known_words from db")
+                self.known_words = self._load_known_words(mywrapper.ret_col(), 'CCFB')
+                logging.info("Loading known_words from db count: {}".format(len(list(self.known_words.keys()))))
+
             handler_request = RestHandlerRequest(self, data, ids, session)
             output = col.execute(self._execute_handler, [handler_request, handler], {}, hasReturnValue)
         except HTTPError as e:
             # we pass these on through!
+            logging.error(e, exc_info=True)
             raise
         except Exception as e:
-            logging.error(e)
+            logging.error(e, exc_info=True)
             return HTTPInternalServerError()
 
         if output is None:
@@ -314,7 +345,7 @@ class RestApp:
 
 class CollectionHandler(RestHandlerBase):
     """Default handler group for 'collection' type."""
-    
+
     #
     # MODELS - Store fields definitions and templates for notes
     #
@@ -409,7 +440,7 @@ class CollectionHandler(RestHandlerBase):
         if deck:
             if not deck['dyn']:
                 raise HTTPBadRequest("There is an existing non-dynamic deck with the name %s" % name)
-            
+
             # safe to empty it because it's a dynamic deck
             # TODO: maybe this should be an option?
             col.sched.emptyDyn(deck['id'])
@@ -418,7 +449,7 @@ class CollectionHandler(RestHandlerBase):
 
         query = req.data.get('query', '')
         count = int(req.data.get('count', 100))
-        mode = req.data.get('mode', 'random') 
+        mode = req.data.get('mode', 'random')
 
         try:
             mode = self.dyn_modes[mode]
@@ -449,7 +480,7 @@ class CollectionHandler(RestHandlerBase):
 
         if not deck['dyn']:
             raise HTTPBadRequest("The given deck is not dynamic: %s" % name)
-            
+
         col.sched.emptyDyn(deck['id'])
 
     #
@@ -493,6 +524,16 @@ class CollectionHandler(RestHandlerBase):
             cards = [{'id': id} for id in ids]
 
         return cards
+
+    def word_known(self, col, req):
+        logging.info("Checking query '{}'".format(req.data))
+        if not req.data.get('word'):
+            return False
+        word = req.data.get('word')
+        found = word in req.app.known_words
+
+        logging.info("Checking {} against db, found is {}".format(word, found))
+        return found
 
     #
     # SCHEDULER - Controls card review, ie. intervals, what cards are due, answering a card, etc.
@@ -559,7 +600,7 @@ class CollectionHandler(RestHandlerBase):
 
         return result
 
-    # TODO: calling answer_card() when the scheduler is not setup can 
+    # TODO: calling answer_card() when the scheduler is not setup can
     #       be an error! This can happen after a collection has been closed
     #       for inactivity, and opened later. But since we're using
     #       @noReturnValue, no error will be passed up. :-/ What to do?
@@ -859,7 +900,7 @@ class DeckHandler(RestHandlerBase):
 
     def index(self, col, req):
         return self._get_deck(col, req.ids[1])
-    
+
     def next_card(self, col, req):
         req_copy = req.copy()
         req_copy.data['deck'] = req.ids[1]
