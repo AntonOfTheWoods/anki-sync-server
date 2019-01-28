@@ -385,7 +385,7 @@ class SyncApp:
     valid_urls = SyncCollectionHandler.operations + SyncMediaHandler.operations + ['hostKey', 'upload', 'download']
 
     def __init__(self, config):
-        from ankisyncd.thread import getCollectionManager
+        from ankisyncd.thread import get_collection_manager
 
         self.data_root = os.path.abspath(config['data_root'])
         self.base_url  = config['base_url']
@@ -398,7 +398,7 @@ class SyncApp:
         self.user_manager = get_user_manager(config)
         self.session_manager = get_session_manager(config)
         self.persistence_manager = get_persistence_manager(config)
-        self.collection_manager = getCollectionManager()
+        self.collection_manager = get_collection_manager(config)
 
         # make sure the base_url has a trailing slash
         if not self.base_url.endswith('/'):
