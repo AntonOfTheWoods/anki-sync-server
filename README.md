@@ -103,3 +103,13 @@ want to install PortAudio, you can edit `anki-bundled/anki/sound.py` and
 
 Manual version: remove every line past "# Packaged commands" in anki/sound.py,
 remove every line starting with "pyaudio" in requirements.txt
+
+Support for other database backends
+-----------------------------------
+
+sqlite3 is used by default for user data, authentication and session persistence.
+
+`ankisyncd` supports loading classes defined via config that manage most
+persistence requirements (the media DB and files are being worked on). All that is
+required is to extend one of the existing manager classes and then reference those
+classes in the config file. See ankisyncd.conf for example config.
